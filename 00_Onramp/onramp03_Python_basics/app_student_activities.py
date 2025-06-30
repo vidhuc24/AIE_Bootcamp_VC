@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 # %%
+=======
+>>>>>>> upstream/main
 import streamlit as st
 import pandas as pd
 import openai
@@ -67,5 +70,8 @@ if st.button("Send to OpenAI") and user_prompt:
         st.write(reply)
     except Exception as e:
         st.error(f"Error: {e}")
+<<<<<<< HEAD
 
 # %%
+=======
+>>>>>>> upstream/main
