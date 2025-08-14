@@ -12,6 +12,7 @@ from langgraph.prebuilt import ToolNode
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import AIMessage
+from langchain_core.output_parsers import ResponseSchema, StructuredOutputParser
 
 from app.state import AgentState
 from app.models import get_chat_model
@@ -42,50 +43,97 @@ def route_to_action_or_helpfulness(state: AgentState):
 
 def helpfulness_node(state: AgentState) -> Dict[str, Any]:
     """Evaluate helpfulness of the latest response relative to the initial query."""
+    # Get current loop count
+    current_loops = state.get("helpfulness_loops", 0)
+    
     # If we've exceeded loop limit, short-circuit with END decision marker
-    if len(state["messages"]) > 10:
-        return {"messages": [AIMessage(content="HELPFULNESS:END")]}    
+    if current_loops > 3:
+        return {"helpfulness_decision": "END"}    
 
     initial_query = state["messages"][0]
     final_response = state["messages"][-1]
 
-    prompt_template = """
-  Given an initial query and a final response, determine if the final response is extremely helpful or not. Please indicate helpfulness with a 'Y' and unhelpfulness as an 'N'.
+    # Use structured output parser to force Y/N format
+    response_schema = ResponseSchema(
+        name="helpfulness",
+        description="Whether the response is helpful (Y) or not helpful (N)",
+        type="string",
+        enum=["Y", "N"]
+    )
+    
+    output_parser = StructuredOutputParser.from_response_schemas([response_schema])
+    format_instructions = output_parser.get_format_instructions()
 
+    prompt_template = """
+  Given an initial query and a final response, determine if the final response is helpful and addresses the query.
+  
+  **Evaluation Criteria:**
+  - Does the response directly answer the question asked?
+  - Is the information relevant and accurate?
+  - Is the response complete enough to be useful?
+  
+  **Be generous in your evaluation** - if the response is reasonably helpful, approve it.
+  Only mark as unhelpful if the response completely misses the point or is irrelevant.
+  
   Initial Query:
   {initial_query}
 
   Final Response:
-  {final_response}"""
+  {final_response}
+  
+  {format_instructions}
+  
+  **CRITICAL: You MUST use the structured format above with ONLY 'Y' or 'N'.**"""
 
     helpfulness_prompt_template = PromptTemplate.from_template(prompt_template)
-    helpfulness_check_model = get_chat_model(model_name="gpt-4.1-mini")
+    helpfulness_check_model = get_chat_model(model_name="gpt-4o-mini", temperature=0.0)
+    
+    # Use the structured output parser
     helpfulness_chain = (
-        helpfulness_prompt_template | helpfulness_check_model | StrOutputParser()
+        helpfulness_prompt_template | helpfulness_check_model | output_parser
     )
 
-    helpfulness_response = helpfulness_chain.invoke(
-        {
-            "initial_query": initial_query.content,
-            "final_response": final_response.content,
-        }
-    )
-
-    decision = "Y" if "Y" in helpfulness_response else "N"
-    return {"messages": [AIMessage(content=f"HELPFULNESS:{decision}")]}
+    try:
+        parsed_response = helpfulness_chain.invoke(
+            {
+                "initial_query": initial_query.content,
+                "final_response": final_response.content,
+                "format_instructions": format_instructions
+            }
+        )
+        decision = parsed_response["helpfulness"]
+    except Exception as e:
+        # Fallback: if structured parsing fails, use simple text parsing
+        print(f"Structured parsing failed: {e}, falling back to text parsing")
+        fallback_response = helpfulness_check_model.invoke(
+            helpfulness_prompt_template.format(
+                initial_query=initial_query.content,
+                final_response=final_response.content,
+                format_instructions=format_instructions
+            )
+        )
+        
+        # Extract Y or N from the fallback response
+        raw_text = str(fallback_response.content).upper()
+        if "Y" in raw_text or any(positive in raw_text for positive in ["YES", "HELPFUL", "GOOD", "APPROVE"]):
+            decision = "Y"
+        else:
+            decision = "N"
+    
+    # Increment loop counter
+    return {"helpfulness_decision": decision, "helpfulness_loops": current_loops + 1}
 
 
 def helpfulness_decision(state: AgentState):
     """Terminate on 'HELPFULNESS:Y' or loop otherwise; guard against infinite loops."""
     # Check loop-limit marker
-    if any(getattr(m, "content", "") == "HELPFULNESS:END" for m in state["messages"][-1:]):
+    if state.get("helpfulness_decision") == "END":
         return END
 
-    last = state["messages"][-1]
-    text = getattr(last, "content", "")
-    if "HELPFULNESS:Y" in text:
-        return "end"
-    return "continue"
+    decision = state.get("helpfulness_decision", "N")
+    if decision == "Y":
+        return END  # Terminate when helpful
+    return "agent"  # Loop back to agent when not helpful
 
 
 def build_graph():
@@ -104,7 +152,7 @@ def build_graph():
     graph.add_conditional_edges(
         "helpfulness",
         helpfulness_decision,
-        {"continue": "agent", "end": END, END: END},
+        {"agent": "agent", END: END},  # Fixed: match the actual return values
     )
     graph.add_edge("action", "agent")
     return graph
