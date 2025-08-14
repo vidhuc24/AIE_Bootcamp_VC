@@ -86,10 +86,38 @@ Do this by creating a Simple Agent that can make API calls to the 🤖Agent Node
 ### ❓ Question #1:
 
 What are the core components of an `AgentCard`?
+#### Answer:
+1. Identity & Metadata:
+    name: Human-readable name (e.g., "General Purpose Agent")
+    description: What the agent does and its capabilities
+    version: Agent version number
+    url: Where to find the agent
+2. Capabilities:
+    capabilities: What the agent can do (streaming, push notifications, etc.)
+    skills: Specific abilities like web search, academic papers, document retrieval
+    Each skill has an id, name, description, tags, and examples
+3. Communication:
+    default_input_modes: What types of content the agent accepts (text, text/plain)
+    default_output_modes: What the agent can return
+4. Technical Details
+    supports_authenticated_extended_card: Whether it has enhanced features for authenticated users
+
+The agent card is basically a "business card" for your agent that lets other agents know how to interact with it in the network.
 
 ### ❓ Question #2:
 
 Why is A2A (and other such protocols) important in your own words?
+
+#### Answer:
+A2A protocols are important because they solve a fundamental problem: how do we get AI agents to work together instead of building everything from scratch every time?
+
+Think of it like this - right now, if you want an AI agent that can search the web, read academic papers, and analyze documents, you'd have to build all those capabilities yourself. But with A2A, you can just ask another agent that already has those tools to help you out.
+
+It's like having a network of specialists instead of trying to be a jack-of-all-trades. Your agent might be great at one thing, but when a user asks for something outside your expertise, you can seamlessly hand it off to another agent that's built for that specific task.
+
+The real power comes from composability - you can mix and match different agents' strengths to create more powerful systems than any single agent could build alone. It's the difference between having one really smart person versus having a team where each person is an expert in their domain.
+
+Plus, it standardizes how agents talk to each other, so you're not reinventing the communication wheel every time you want agents to collaborate. It's like having a common language that all agents understand, making the whole ecosystem more efficient and powerful.
 
 ### 🚧 Advanced Build:
 

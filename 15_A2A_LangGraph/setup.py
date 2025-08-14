@@ -4,6 +4,7 @@
 import os
 import sys
 from pathlib import Path
+from setuptools import setup, find_packages
 
 
 def create_env_file():
